@@ -966,8 +966,12 @@ class MachineState:
                 self.internal_temperature_c = internal_temperature_c
             self.last_checkin = time()
             if oops:
-                await self._handle_oops(users)
+                # Set last_update *before* the handler runs: the handler fires
+                # the status-change webhook synchronously (from status_dict), so
+                # last_update must already reflect this event for the webhook
+                # payload's last_update to match its own timestamp.
                 self.last_update = time()
+                await self._handle_oops(users)
             # Handle always-enabled machines - track RFID but maintain always-on state
             if (
                 self.machine.always_enabled
@@ -983,11 +987,14 @@ class MachineState:
                 if rfid_value != self.rfid_value:
                     await self._handle_rfid_tracking_always_enabled(users, rfid_value)
             elif rfid_value != self.rfid_value:
+                # Set last_update *before* the handler for the same reason as
+                # the oops branch above: the handler fires the webhook and the
+                # payload reads last_update from status_dict.
+                self.last_update = time()
                 if rfid_value is None:
                     await self._handle_rfid_remove()
                 else:
                     await self._handle_rfid_insert(users, rfid_value)
-                self.last_update = time()
             else:
                 # No RFID change - check for stale always-enabled state.
                 # This handles the case where always_enabled config was changed

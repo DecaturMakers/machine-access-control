@@ -14,8 +14,21 @@ from dm_mac.webhook import WebhookNotifier
 pbm: str = "dm_mac.webhook"
 
 
-def _machine(status_dict: Optional[Dict[str, Any]] = None) -> Mock:
-    """Build a fake Machine whose status_dict returns a fresh dict each call."""
+class _FakeMachine:
+    """Stand-in for Machine whose ``status_dict`` returns a fresh dict each
+    access, exactly like the real property, so ``build_payload``'s in-place
+    mutation cannot leak between accesses."""
+
+    def __init__(self, status_dict: Dict[str, Any]):
+        self._status_dict = status_dict
+
+    @property
+    def status_dict(self) -> Dict[str, Any]:
+        return dict(self._status_dict)
+
+
+def _machine(status_dict: Optional[Dict[str, Any]] = None) -> _FakeMachine:
+    """Build a fake Machine whose status_dict returns a fresh dict each access."""
     if status_dict is None:
         status_dict = {
             "name": "planer",
@@ -28,10 +41,7 @@ def _machine(status_dict: Optional[Dict[str, Any]] = None) -> Mock:
             "last_checkin": 100.0,
             "last_update": 200.0,
         }
-    mach = Mock()
-    # Return a copy each access so build_payload's mutation doesn't leak.
-    mach.status_dict = dict(status_dict)
-    return mach
+    return _FakeMachine(status_dict)
 
 
 class _FakePost:
@@ -97,6 +107,37 @@ class TestFromEnv:
             notifier = WebhookNotifier.from_env()
         assert notifier is not None
         assert notifier.url == "https://esb/hook"
+
+    def test_does_not_log_secrets(self) -> None:
+        """from_env logs only scheme+host, never userinfo or query secrets."""
+        secret_url = "https://user:pass@esb.example.com/hook?token=SECRET"
+        with patch.dict("os.environ", {"STATUS_WEBHOOK_URL": secret_url}), patch(
+            f"{pbm}.logger"
+        ) as mock_logger:
+            notifier = WebhookNotifier.from_env()
+        assert notifier is not None
+        # The full URL (with credentials) is still used for delivery...
+        assert notifier.url == secret_url
+        # ...but the logged message contains only scheme+host.
+        logged = " ".join(str(a) for a in mock_logger.info.call_args.args)
+        assert "esb.example.com" in logged
+        assert "pass" not in logged
+        assert "SECRET" not in logged
+
+
+class TestSafeUrl:
+    """Tests for WebhookNotifier._safe_url redaction."""
+
+    def test_strips_userinfo_and_query(self) -> None:
+        """Userinfo, path, and query are stripped; scheme+host kept."""
+        assert (
+            WebhookNotifier._safe_url("https://u:p@host.example:8443/hook?k=v")
+            == "https://host.example:8443"
+        )
+
+    def test_plain_url(self) -> None:
+        """A plain URL reduces to scheme://host."""
+        assert WebhookNotifier._safe_url("https://esb/hook") == "https://esb"
 
 
 class TestBuildPayload:

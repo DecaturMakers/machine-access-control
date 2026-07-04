@@ -3,6 +3,7 @@
 import logging
 import os
 from asyncio import CancelledError
+from asyncio import Task
 from asyncio import create_task
 from asyncio import sleep
 from time import time
@@ -10,6 +11,8 @@ from typing import TYPE_CHECKING
 from typing import Any
 from typing import Dict
 from typing import Optional
+from typing import Set
+from urllib.parse import urlsplit
 
 import aiohttp
 
@@ -49,6 +52,26 @@ class WebhookNotifier:
     def __init__(self, url: str):
         """Initialize a WebhookNotifier posting to ``url``."""
         self.url: str = url
+        #: Strong references to in-flight delivery tasks. ``asyncio`` only
+        #: holds a *weak* reference to tasks created via
+        #: :func:`asyncio.create_task`, so without this a long-running
+        #: :meth:`_deliver` (up to ~27 s of backoff + timeouts) could be
+        #: garbage-collected mid-flight. Each task removes itself via a
+        #: done-callback (the pattern from the asyncio docs).
+        self._tasks: Set["Task[None]"] = set()
+
+    @staticmethod
+    def _safe_url(url: str) -> str:
+        """Return ``scheme://host[:port]`` of ``url`` for safe logging.
+
+        Strips any userinfo, path, and query string so credentials embedded
+        in the URL (userinfo or query params) are never written to logs.
+        """
+        parts = urlsplit(url)
+        host: str = parts.hostname or ""
+        if parts.port is not None:
+            host = f"{host}:{parts.port}"
+        return f"{parts.scheme}://{host}" if parts.scheme else host
 
     @classmethod
     def from_env(cls) -> Optional["WebhookNotifier"]:
@@ -56,7 +79,8 @@ class WebhookNotifier:
         url: str = os.environ.get("STATUS_WEBHOOK_URL", "").strip()
         if not url:
             return None
-        logger.info("Status-change webhook enabled; posting to %s", url)
+        # Log only scheme+host: the URL may contain secrets (userinfo/query).
+        logger.info("Status-change webhook enabled; posting to %s", cls._safe_url(url))
         return cls(url)
 
     def build_payload(
@@ -90,7 +114,11 @@ class WebhookNotifier:
     ) -> None:
         """Build the payload and spawn a fire-and-forget delivery task."""
         payload: Dict[str, Any] = self.build_payload(machine, event, user=user)
-        create_task(self._deliver(payload))
+        task: "Task[None]" = create_task(self._deliver(payload))
+        # Hold a strong reference until the task completes so the event loop's
+        # weak reference cannot let it be garbage-collected mid-delivery.
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
 
     async def _deliver(self, payload: Dict[str, Any]) -> None:
         """Deliver one webhook with retries and exponential backoff.
@@ -98,25 +126,27 @@ class WebhookNotifier:
         Returns as soon as an attempt gets a non-error (< 400) response. On
         network errors or 4xx/5xx responses it retries up to
         :data:`MAX_ATTEMPTS` times, backing off exponentially between attempts,
-        then logs a single error and gives up.
+        then logs a single error and gives up. A single
+        :class:`aiohttp.ClientSession` is reused across attempts so retries can
+        benefit from connection pooling.
         """
         timeout: aiohttp.ClientTimeout = aiohttp.ClientTimeout(
             total=self.REQUEST_TIMEOUT_SEC
         )
         last_err: Optional[str] = None
-        for attempt in range(1, self.MAX_ATTEMPTS + 1):
-            if attempt > 1:
-                await sleep(self.BACKOFF_BASE_SEC * (2 ** (attempt - 2)))
-            try:
-                async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            for attempt in range(1, self.MAX_ATTEMPTS + 1):
+                if attempt > 1:
+                    await sleep(self.BACKOFF_BASE_SEC * (2 ** (attempt - 2)))
+                try:
                     async with session.post(self.url, json=payload) as resp:
                         if resp.status < 400:
                             return
                         last_err = f"HTTP {resp.status}"
-            except CancelledError:  # pragma: no cover
-                raise
-            except Exception as ex:
-                last_err = repr(ex)
+                except CancelledError:  # pragma: no cover
+                    raise
+                except Exception as ex:
+                    last_err = repr(ex)
         logger.error(
             "Failed to deliver status webhook for machine %s event %s after "
             "%d attempts: %s",

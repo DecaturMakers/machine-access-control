@@ -6,9 +6,13 @@ from typing import Dict
 from typing import List
 from unittest.mock import AsyncMock
 from unittest.mock import Mock
+from unittest.mock import patch
 
+from freezegun import freeze_time
 from quart import Quart
 from quart.typing import TestClientProtocol
+
+from dm_mac.webhook import WebhookNotifier
 
 from .quart_test_helpers import app_and_client
 
@@ -156,3 +160,28 @@ class TestWebhookWiring:
             json=_heartbeat("metal-mill", rfid_value="8114346998"),
         )
         assert resp.status_code == 200
+
+    @freeze_time("2024-01-01 00:00:00")
+    async def test_payload_last_update_matches_timestamp(self, tmp_path: Path) -> None:
+        """Regression: the webhook payload's last_update reflects the current
+        event, so it matches the payload's own timestamp for login/logout/oops
+        fired through update() (previously it lagged one event behind)."""
+        app, client = app_and_client(tmp_path)
+        with patch.object(
+            WebhookNotifier, "_deliver", new_callable=AsyncMock
+        ) as mock_deliver:
+            app.config["WEBHOOK_NOTIFIER"] = WebhookNotifier("http://x")
+            await client.post(
+                "/api/machine/update",
+                json=_heartbeat("metal-mill", rfid_value="8114346998"),
+            )  # login
+            await client.post(
+                "/api/machine/update", json=_heartbeat("metal-mill")
+            )  # logout
+            await client.post(
+                "/api/machine/update", json=_heartbeat("metal-mill", oops=True)
+            )  # oops
+        payloads = [call.args[0] for call in mock_deliver.call_args_list]
+        assert [p["event"] for p in payloads] == ["login", "logout", "oops"]
+        for p in payloads:
+            assert p["last_update"] == p["timestamp"], p["event"]
