@@ -141,7 +141,22 @@ tests cover the notifier (payload/retry/backoff/disabled) and the wiring
 * **2.4** Unit tests: payload shape per event, disabled-when-unset, retry/backoff
   on failure (mock ``aiohttp``), and non-firing on ordinary heartbeat updates.
 
-### Milestone 3 — Acceptance Criteria
+### Milestone 3 — Acceptance Criteria — ✅ COMPLETE
+
+Updated documentation (`docs/source/configuration.rst` env-var table;
+`docs/source/http-api.rst` with the Machine Status API and Status-Change
+Webhook sections; `CLAUDE.md` app-config, API endpoints, env vars, and a new
+Status-Change Webhook subsection). `README.rst` is a pointer to the full docs
+and needed no change. `GET /api/machines` is picked up automatically by the
+generated OpenAPI spec, and `dm_mac.webhook` by `sphinx-apidoc`. New code has
+unit-test coverage (`webhook.py` at 100%). All `nox` sessions pass: `tests`,
+`mypy`, `pre-commit`, `typeguard`, `docs`, and `safety`.
+
+Note: `nox -s safety` was failing on `main` due to a pre-existing transitive
+`msgpack==1.2.0` advisory (GHSA-6v7p-g79w-8964), unrelated to this feature. To
+satisfy the "all nox sessions passing" criterion, `msgpack ^1.2.1` was pinned
+in `pyproject.toml`'s existing "secure versions of transitive dependencies"
+block (same mechanism already used for urllib3/werkzeug/marshmallow).
 
 * **3.1** Update documentation: ``README.md`` (env var + endpoints if listed),
   ``docs/source/configuration.rst`` (add ``STATUS_WEBHOOK_URL`` to the env-var

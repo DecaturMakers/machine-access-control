@@ -99,6 +99,9 @@ Environment Variables
    * - ``SLACK_OOPS_CHANNEL_ID``
      - no
      - If using the Slack integration, the Channel ID of of the public channel where Oops and maintenance notices will be posted, and where machine status can be checked.
+   * - ``STATUS_WEBHOOK_URL``
+     - no
+     - If set, the URL to POST a JSON status-change webhook to on every meaningful machine event (login, logout, unauthorized or unknown fob, override login, oops, un-oops, lockout, unlock, reboot). Disabled when unset. See :ref:`http-api.status-webhook`.
 
 .. _configuration.machine-state-dir:
 
