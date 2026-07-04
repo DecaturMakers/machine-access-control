@@ -355,11 +355,14 @@ class Machine:
         ``None`` otherwise.
         """
         state: "MachineState" = self.state
+        # Capture the user object once so we never check-then-use a field that
+        # could be reassigned to None between the guard and the reads.
+        user: Optional[User] = state.current_user
         current_user: Optional[Dict[str, str]] = None
-        if state.current_user is not None:
+        if user is not None:
             current_user = {
-                "account_id": state.current_user.account_id,
-                "full_name": state.current_user.full_name,
+                "account_id": user.account_id,
+                "full_name": user.full_name,
             }
         return {
             "name": self.name,
@@ -991,13 +994,21 @@ class MachineState:
                 and not self.is_oopsed
                 and not self.is_locked_out
             ):
+                # Only bump last_update on an actual change: the transition
+                # into the always-on state (relay was off) or a tracked RFID
+                # change (login/logout/unknown). A steady-state always-on
+                # heartbeat is not a meaningful update, so it must not keep
+                # last_update perpetually "now" for /api/machines & Prometheus.
+                became_on: bool = not self.relay_desired_state
+                rfid_changed: bool = rfid_value != self.rfid_value
                 self.relay_desired_state = True
                 self.display_text = self.ALWAYS_ON_DISPLAY_TEXT
                 self.status_led_rgb = (0.0, 1.0, 0.0)
                 self.status_led_brightness = self.STATUS_LED_BRIGHTNESS
-                self.last_update = time()
+                if became_on or rfid_changed:
+                    self.last_update = time()
                 # Track RFID changes for logging/auditing purposes
-                if rfid_value != self.rfid_value:
+                if rfid_changed:
                     await self._handle_rfid_tracking_always_enabled(users, rfid_value)
             elif rfid_value != self.rfid_value:
                 # The RFID handlers mutate state inline (no dedicated method
