@@ -827,6 +827,10 @@ class MachineState:
             self.machine.display_name,
         )
         # locking handled in update()
+        # A reboot resets the machine (logs out any user, resets the relay):
+        # a meaningful state change, so bump last_update before the webhook
+        # reads it from status_dict.
+        self.last_update = time()
         prior_user: Optional[User] = self.current_user
         self.current_user = None
         self.is_override_login = False
@@ -856,6 +860,9 @@ class MachineState:
             "Machine %s was locked out for maintenance.", self.machine.display_name
         )
         with self._lock:
+            # Meaningful state change: bump last_update so it is fresh for any
+            # reader (Prometheus, GET /api/machines, the status webhook payload).
+            self.last_update = time()
             self.is_locked_out = True
             self.relay_desired_state = False
             self.current_user = None
@@ -871,6 +878,9 @@ class MachineState:
             self.machine.display_name,
         )
         with self._lock:
+            # Meaningful state change: bump last_update so it is fresh for any
+            # reader (Prometheus, GET /api/machines, the status webhook payload).
+            self.last_update = time()
             self.is_locked_out = False
             self.current_user = None
             # Restore always-enabled state if applicable
@@ -893,6 +903,9 @@ class MachineState:
         )
         locker = self._lock if do_locking else nullcontext()
         with locker:
+            # Meaningful state change: bump last_update so it is fresh for any
+            # reader (Prometheus, GET /api/machines, the status webhook payload).
+            self.last_update = time()
             self.is_oopsed = True
             self.relay_desired_state = False
             self.current_user = None
@@ -908,6 +921,9 @@ class MachineState:
         )
         locker = self._lock if do_locking else nullcontext()
         with locker:
+            # Meaningful state change: bump last_update so it is fresh for any
+            # reader (Prometheus, GET /api/machines, the status webhook payload).
+            self.last_update = time()
             self.is_oopsed = False
             self.current_user = None
             # Restore always-enabled state if applicable
@@ -966,11 +982,8 @@ class MachineState:
                 self.internal_temperature_c = internal_temperature_c
             self.last_checkin = time()
             if oops:
-                # Set last_update *before* the handler runs: the handler fires
-                # the status-change webhook synchronously (from status_dict), so
-                # last_update must already reflect this event for the webhook
-                # payload's last_update to match its own timestamp.
-                self.last_update = time()
+                # _handle_oops -> MachineState.oops() bumps last_update itself,
+                # before it fires the webhook, so no pre-set is needed here.
                 await self._handle_oops(users)
             # Handle always-enabled machines - track RFID but maintain always-on state
             if (
@@ -987,9 +1000,10 @@ class MachineState:
                 if rfid_value != self.rfid_value:
                     await self._handle_rfid_tracking_always_enabled(users, rfid_value)
             elif rfid_value != self.rfid_value:
-                # Set last_update *before* the handler for the same reason as
-                # the oops branch above: the handler fires the webhook and the
-                # payload reads last_update from status_dict.
+                # The RFID handlers mutate state inline (no dedicated method
+                # that bumps last_update), and they fire the status webhook
+                # before returning. Set last_update first so the webhook payload
+                # reflects this event rather than the previous one.
                 self.last_update = time()
                 if rfid_value is None:
                     await self._handle_rfid_remove()

@@ -185,3 +185,36 @@ class TestWebhookWiring:
         assert [p["event"] for p in payloads] == ["login", "logout", "oops"]
         for p in payloads:
             assert p["last_update"] == p["timestamp"], p["event"]
+
+    @freeze_time("2024-01-01 00:00:00")
+    async def test_control_and_reboot_last_update_matches_timestamp(
+        self, tmp_path: Path
+    ) -> None:
+        """Regression: API oops/lockout/clear and reboot events also carry a
+        fresh last_update (bumped at the mutation site), matching timestamp."""
+        app, client = app_and_client(tmp_path)
+        with patch.object(
+            WebhookNotifier, "_deliver", new_callable=AsyncMock
+        ) as mock_deliver:
+            app.config["WEBHOOK_NOTIFIER"] = WebhookNotifier("http://x")
+            await client.post("/api/machine/oops/metal-mill")
+            await client.delete("/api/machine/oops/metal-mill")
+            await client.post("/api/machine/locked_out/metal-mill")
+            await client.delete("/api/machine/locked_out/metal-mill")
+            # reboot: establish an uptime, then report a lower one
+            await client.post(
+                "/api/machine/update", json=_heartbeat("hammer", uptime=100.0)
+            )
+            await client.post(
+                "/api/machine/update", json=_heartbeat("hammer", uptime=1.0)
+            )
+        payloads = [call.args[0] for call in mock_deliver.call_args_list]
+        assert [p["event"] for p in payloads] == [
+            "oops",
+            "unoops",
+            "lockout",
+            "unlock",
+            "reboot",
+        ]
+        for p in payloads:
+            assert p["last_update"] == p["timestamp"], p["event"]

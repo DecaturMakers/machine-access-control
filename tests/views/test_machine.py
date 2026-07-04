@@ -814,7 +814,8 @@ class TestLockOut:
         assert ms.rfid_present_since == 1689477200.0
         assert ms.current_user is None
         assert ms.relay_desired_state is False
-        assert ms.last_update == 1689477200.0
+        # lockout() bumps last_update (meaningful state change) to "now"
+        assert ms.last_update == 1689477248.0
         assert ms.status_led_rgb == (1.0, 0.5, 0.0)
         assert ms.status_led_brightness == MachineState.STATUS_LED_BRIGHTNESS
 
@@ -944,7 +945,8 @@ class TestReboot:
         assert ms.rfid_present_since == 1689477200.0
         assert ms.current_user is None
         assert ms.relay_desired_state is False
-        assert ms.last_update == 1689477200.0
+        # _handle_reboot() bumps last_update (machine reset) to "now"
+        assert ms.last_update == 1689477248.0
         assert ms.status_led_rgb == (0.0, 0.0, 0.0)
         assert ms.status_led_brightness == 0.0
 
@@ -1009,7 +1011,8 @@ class TestReboot:
         assert ms.rfid_present_since == 1689477200.0
         assert ms.current_user is None
         assert ms.relay_desired_state is False
-        assert ms.last_update == 1689477200.0
+        # _handle_reboot() bumps last_update (machine reset) to "now"
+        assert ms.last_update == 1689477248.0
         assert ms.status_led_rgb == (0.0, 0.0, 0.0)
         assert ms.status_led_brightness == 0.0
         assert slack.mock_calls == [call.admin_log("Machine hammer has rebooted.")]
