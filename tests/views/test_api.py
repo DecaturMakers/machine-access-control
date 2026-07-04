@@ -29,6 +29,49 @@ class TestIndex:
         assert response.headers["Content-Type"] == "application/json"
 
 
+class TestMachines:
+    """Tests for the GET /api/machines endpoint."""
+
+    async def test_all_machines_listed_sorted(self, tmp_path: Path) -> None:
+        """All configured machines are returned, sorted by name."""
+        app: Quart
+        client: TestClientProtocol
+        app, client = app_and_client(tmp_path)
+        response: Response = await client.get("/api/machines")
+        assert response.status_code == 200
+        assert response.headers["Content-Type"] == "application/json"
+        data = await response.json
+        names = [m["name"] for m in data["machines"]]
+        assert names == sorted(names)
+        assert set(names) == set(app.config["MACHINES"].machines_by_name.keys())
+
+    async def test_status_reflects_state(self, tmp_path: Path) -> None:
+        """Endpoint reflects live machine state (in_use/oops/locked_out/user)."""
+        app, client = app_and_client(tmp_path)
+        mconf = app.config["MACHINES"]
+        # in_use with a logged-in user
+        mm = mconf.machines_by_name["metal-mill"]
+        mm.state.relay_desired_state = True
+        mm.state.last_checkin = 100.0
+        mm.state.current_user = app.config["USERS"].users_by_fob["8114346998"]
+        # oopsed
+        mconf.machines_by_name["hammer"].state.is_oopsed = True
+        # locked out
+        mconf.machines_by_name["restrictive-lathe"].state.is_locked_out = True
+        response: Response = await client.get("/api/machines")
+        by_name = {m["name"]: m for m in (await response.json)["machines"]}
+        assert by_name["metal-mill"]["status"] == "in_use"
+        assert by_name["metal-mill"]["relay"] is True
+        assert by_name["metal-mill"]["current_user"] == {
+            "account_id": "1",
+            "full_name": "Ashley Williams",
+        }
+        assert by_name["hammer"]["status"] == "oops"
+        assert by_name["hammer"]["oops"] is True
+        assert by_name["restrictive-lathe"]["status"] == "locked_out"
+        assert by_name["restrictive-lathe"]["locked_out"] is True
+
+
 @freeze_time("2023-07-16 03:14:08", tz_offset=0)
 class TestReloadUsers:
     """Tests for reloading users."""

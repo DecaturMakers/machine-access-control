@@ -55,6 +55,57 @@ class MachineUpdateResponse(BaseModel):
     )
 
 
+class MachineStatusUser(BaseModel):
+    """The user currently logged in to a machine, if any."""
+
+    account_id: str = Field(description="Unique account ID of the user.")
+    full_name: str = Field(description="Full name of the user.")
+
+
+class MachineStatus(BaseModel):
+    """Current status of a single machine.
+
+    Shared representation used by ``GET /api/machines`` and the status-change
+    webhook (which adds ``event`` and ``timestamp`` fields).
+    """
+
+    name: str = Field(description="Unique machine name.")
+    display_name: str = Field(
+        description="Human-friendly name (alias if configured, else name)."
+    )
+    status: str = Field(
+        description="Derived status: one of 'locked_out', 'oops', 'in_use', "
+        "'idle', or 'unknown' (never checked in)."
+    )
+    relay: bool = Field(description="Whether the primary relay is energized.")
+    oops: bool = Field(description="Whether the machine is in Oops state.")
+    locked_out: bool = Field(
+        description="Whether the machine is locked out for maintenance."
+    )
+    current_user: Optional[MachineStatusUser] = Field(
+        default=None,
+        description="The logged-in user, or null if no user is logged in.",
+    )
+    last_checkin: Optional[float] = Field(
+        default=None,
+        description="Epoch seconds of the machine's last check-in, or null "
+        "if it has never checked in.",
+    )
+    last_update: Optional[float] = Field(
+        default=None,
+        description="Epoch seconds of the machine's last meaningful state "
+        "change, or null if none.",
+    )
+
+
+class MachinesListResponse(BaseModel):
+    """Response body for GET /api/machines (200)."""
+
+    machines: List[MachineStatus] = Field(
+        description="Status of all configured machines, sorted by name."
+    )
+
+
 class SuccessResponse(BaseModel):
     """Generic success response."""
 

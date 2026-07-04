@@ -321,6 +321,54 @@ class Machine:
         return self.alias if self.alias else self.name
 
     @property
+    def status(self) -> str:
+        """Return a single-word derived status string for this machine.
+
+        One of ``locked_out``, ``oops``, ``in_use``, ``idle``, or ``unknown``
+        (the latter only when the machine has never checked in and is not in
+        any other state). Used by the ``GET /api/machines`` endpoint and the
+        status-change webhook so both share a single source of truth.
+        """
+        state: "MachineState" = self.state
+        if state.is_locked_out:
+            return "locked_out"
+        if state.is_oopsed:
+            return "oops"
+        if state.relay_desired_state:
+            return "in_use"
+        if state.last_checkin is None:
+            return "unknown"
+        return "idle"
+
+    @property
+    def status_dict(self) -> Dict[str, Any]:
+        """Return the shared ESB status representation for this machine.
+
+        Consumed by both ``GET /api/machines`` and the status-change webhook
+        (which adds ``event`` and ``timestamp`` fields). ``current_user`` is
+        ``{"account_id": ..., "full_name": ...}`` when a user is logged in, or
+        ``None`` otherwise.
+        """
+        state: "MachineState" = self.state
+        current_user: Optional[Dict[str, str]] = None
+        if state.current_user is not None:
+            current_user = {
+                "account_id": state.current_user.account_id,
+                "full_name": state.current_user.full_name,
+            }
+        return {
+            "name": self.name,
+            "display_name": self.display_name,
+            "status": self.status,
+            "relay": state.relay_desired_state,
+            "oops": state.is_oopsed,
+            "locked_out": state.is_locked_out,
+            "current_user": current_user,
+            "last_checkin": state.last_checkin,
+            "last_update": state.last_update,
+        }
+
+    @property
     def as_dict(self) -> Dict[str, Any]:
         """Return a dict representation of this machine."""
         d: Dict[str, Any] = {

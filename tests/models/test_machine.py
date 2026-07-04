@@ -6,6 +6,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 from typing import Dict
+from unittest.mock import Mock
 from unittest.mock import call
 from unittest.mock import patch
 
@@ -183,6 +184,100 @@ class TestMachine:
                 alias="My Machine",
             )
         assert cls.display_name == "My Machine"
+
+
+class TestMachineStatus:
+    """Tests for Machine.status and Machine.status_dict."""
+
+    def _machine(self, **state_attrs: Any) -> Machine:
+        """Build a Machine with a mocked state and the given state attributes."""
+        with patch(f"{pbm}.MachineState", autospec=True):
+            mach: Machine = Machine(
+                name="mName",
+                authorizations_or=["Foo"],
+                alias="My Machine",
+            )
+        # Sensible defaults; overridden by state_attrs.
+        defaults: Dict[str, Any] = {
+            "is_locked_out": False,
+            "is_oopsed": False,
+            "relay_desired_state": False,
+            "last_checkin": 123.0,
+            "last_update": 456.0,
+            "current_user": None,
+        }
+        defaults.update(state_attrs)
+        for k, v in defaults.items():
+            setattr(mach.state, k, v)
+        return mach
+
+    def test_status_locked_out(self) -> None:
+        """locked_out takes precedence over everything else."""
+        mach = self._machine(
+            is_locked_out=True, is_oopsed=True, relay_desired_state=True
+        )
+        assert mach.status == "locked_out"
+
+    def test_status_oops(self) -> None:
+        """oops takes precedence over in_use/idle."""
+        mach = self._machine(is_oopsed=True, relay_desired_state=True)
+        assert mach.status == "oops"
+
+    def test_status_in_use(self) -> None:
+        """relay energized with no oops/lockout is in_use."""
+        mach = self._machine(relay_desired_state=True)
+        assert mach.status == "in_use"
+
+    def test_status_idle(self) -> None:
+        """checked-in machine with relay off is idle."""
+        mach = self._machine(relay_desired_state=False, last_checkin=123.0)
+        assert mach.status == "idle"
+
+    def test_status_unknown(self) -> None:
+        """never-checked-in machine is unknown."""
+        mach = self._machine(relay_desired_state=False, last_checkin=None)
+        assert mach.status == "unknown"
+
+    def test_status_dict_no_user(self) -> None:
+        """status_dict with no logged-in user."""
+        mach = self._machine(
+            relay_desired_state=False,
+            last_checkin=123.0,
+            last_update=456.0,
+            current_user=None,
+        )
+        assert mach.status_dict == {
+            "name": "mName",
+            "display_name": "My Machine",
+            "status": "idle",
+            "relay": False,
+            "oops": False,
+            "locked_out": False,
+            "current_user": None,
+            "last_checkin": 123.0,
+            "last_update": 456.0,
+        }
+
+    def test_status_dict_with_user(self) -> None:
+        """status_dict serializes the logged-in user."""
+        user = Mock(account_id="42", full_name="Jane Doe")
+        mach = self._machine(
+            relay_desired_state=True,
+            last_checkin=123.0,
+            last_update=456.0,
+            current_user=user,
+        )
+        assert mach.status_dict == {
+            "name": "mName",
+            "display_name": "My Machine",
+            "status": "in_use",
+            "relay": True,
+            "oops": False,
+            "locked_out": False,
+            "current_user": {"account_id": "42", "full_name": "Jane Doe"},
+            "last_checkin": 123.0,
+            "last_update": 456.0,
+        }
 
 
 class TestMachinesConfigGetMachine:
