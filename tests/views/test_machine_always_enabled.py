@@ -297,6 +297,47 @@ class TestAlwaysEnabledMachine:
         }
 
     @freeze_time("2023-07-16 03:14:08", tz_offset=0)
+    async def test_always_enabled_last_update_only_on_change(
+        self, tmp_path: Path
+    ) -> None:
+        """Always-on machines bump last_update only on a real change (transition
+        into always-on or a tracked RFID change), not on steady-state
+        heartbeats — so /api/machines and Prometheus don't show a perpetually
+        "now" last_update for an idle always-on machine."""
+        app: Quart
+        client: TestClientProtocol
+        app, client = app_and_client(tmp_path)
+        mname: str = "always-on-machine"
+        m: Machine = app.config["MACHINES"].machines_by_name[mname]
+
+        def heartbeat(rfid: str = "") -> dict:
+            return {
+                "machine_name": mname,
+                "oops": False,
+                "rfid_value": rfid,
+                "uptime": 10.0,
+                "wifi_signal_db": -54,
+                "wifi_signal_percent": 92,
+                "internal_temperature_c": 53.89,
+            }
+
+        # First contact: relay transitions off -> on, so last_update is set.
+        await client.post("/api/machine/update", json=heartbeat())
+        assert m.state.relay_desired_state is True
+        assert m.state.last_update == 1689477248.0
+
+        # Steady-state heartbeat (relay already on, no RFID change): last_update
+        # must NOT be bumped. A sentinel detects any unwanted write.
+        m.state.last_update = 111.0
+        await client.post("/api/machine/update", json=heartbeat())
+        assert m.state.last_update == 111.0
+
+        # RFID login (tracked change): last_update is bumped to now.
+        m.state.last_update = 111.0
+        await client.post("/api/machine/update", json=heartbeat(rfid="8114346998"))
+        assert m.state.last_update == 1689477248.0
+
+    @freeze_time("2023-07-16 03:14:08", tz_offset=0)
     async def test_always_enabled_unlock(self, tmp_path: Path) -> None:
         """Test always-enabled machine restores always-on state after unlock."""
         # boilerplate for test

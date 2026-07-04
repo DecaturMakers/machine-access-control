@@ -24,6 +24,7 @@ from dm_mac.utils import set_log_info
 from dm_mac.views.api import api
 from dm_mac.views.machine import machineapi
 from dm_mac.views.prometheus import prometheus_route
+from dm_mac.webhook import WebhookNotifier
 
 logger: logging.Logger = logging.getLogger()
 logging.basicConfig(
@@ -99,6 +100,7 @@ def create_app() -> Quart:
     app.config.update({"USERS": UsersConfig()})
     app.config.update({"START_TIME": time()})
     app.config.update({"SLACK_HANDLER": None})
+    app.config.update({"WEBHOOK_NOTIFIER": WebhookNotifier.from_env()})
     app.config.update({"FLEET_TIMEOUT_TRACKER": FleetTimeoutTracker()})
     app.register_blueprint(api)
     app.add_url_rule("/metrics", view_func=prometheus_route)

@@ -110,6 +110,7 @@ On every push to `main`, `.github/workflows/release.yml` compares the `pyproject
 - `MACHINES`: MachinesConfig instance managing all machine configurations
 - `USERS`: UsersConfig instance managing all user data
 - `SLACK_HANDLER`: Optional SlackHandler for Slack integration
+- `WEBHOOK_NOTIFIER`: Optional WebhookNotifier (see Status-Change Webhook below); `None` unless `STATUS_WEBHOOK_URL` is set
 - `START_TIME`: Server start timestamp for uptime tracking
 
 **Configuration System**:
@@ -196,7 +197,29 @@ as `/api/machine/*`):
 
 **Admin APIs** (`/api/*`):
 - `POST /api/reload-users`: Hot-reload users.json without restart
+- `GET /api/machines`: List all machines and their current status as JSON
+  (sorted by name). Read-only; intended for external consumers such as the
+  Equipment Status Board. Each entry is `Machine.status_dict` (name,
+  display_name, derived `status`, relay, oops, locked_out, current_user,
+  last_checkin, last_update).
 - `GET /metrics`: Prometheus metrics endpoint
+
+### Status-Change Webhook
+
+When `STATUS_WEBHOOK_URL` is set, `WebhookNotifier` (`src/dm_mac/webhook.py`)
+POSTs a JSON webhook to that URL on every *meaningful* machine status change —
+never on ordinary MCU heartbeats. Events: `login`, `logout`, `unauthorized`,
+`unknown_fob`, `override_login`, `oops`, `unoops`, `lockout`, `unlock`,
+`reboot`. The payload is `Machine.status_dict` plus `event`, `timestamp`, and a
+distinct `user` field (the event actor, e.g. who logged out — differs from
+`current_user`). Delivery is fire-and-forget (an `asyncio` task, like the Slack
+notifications) with a per-attempt timeout and bounded exponential-backoff
+retry, so the MCU response is never blocked; failures are logged and dropped.
+`notify()` is called only from the meaningful status-change code paths in
+`models/machine.py`, so heartbeats never fire it. The notifier is resolved via
+`current_app` in request-context (MCU/API) paths and via the passed Slack
+handler's app (`slack.quart`) in the Slack-command path, which runs without a
+request context.
 
 ### Logging
 
@@ -218,6 +241,7 @@ Optional for MAC server:
 - `SLACK_SIGNING_SECRET`: Slack Signing Secret
 - `SLACK_CONTROL_CHANNEL_ID`: Private admin channel ID
 - `SLACK_OOPS_CHANNEL_ID`: Public channel for oops/maintenance notices
+- `STATUS_WEBHOOK_URL`: If set, URL to POST status-change webhooks to (see Status-Change Webhook above); disabled when unset
 
 ## Testing Notes
 

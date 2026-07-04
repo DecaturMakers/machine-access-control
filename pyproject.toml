@@ -37,6 +37,9 @@ dependencies.werkzeug = "^3.1.4"
 dependencies.marshmallow = "^4.1.2"
 dependencies.quart-schema = "^0.23.0"
 dependencies.pydantic = "^2.12.5"
+# Security: msgpack is a dev-only transitive (via cachecontrol); pin the secure
+# floor in the dev group so it is not added to the production dependency set.
+group.dev.dependencies.msgpack = "^1.2.1"
 group.dev.dependencies.Pygments = ">=2.10.0"
 group.dev.dependencies.black = ">=21.10b0"
 group.dev.dependencies.coverage = { extras = [ "toml" ], version = ">=6.2" }

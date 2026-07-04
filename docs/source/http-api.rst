@@ -82,6 +82,93 @@ The ``display`` field is byte-identical between pre-feature and post-feature
 servers for any given (machine, operator, machine state) tuple. ``second_relay``
 configuration never causes LCD changes.
 
+Machine Status API
+------------------
+
+``GET /api/machines``
+
+Returns the current status of every configured machine as JSON, sorted by
+machine name. This read-only endpoint is intended for external consumers (such
+as the `Equipment Status Board
+<https://github.com/DecaturMakers/equipment-status-board>`_) to poll or
+reconcile machine state. It is included in the OpenAPI spec above. Each machine
+entry has the shape:
+
+::
+
+    {
+      "name": "planer",
+      "display_name": "Planer",
+      "status": "in_use",
+      "relay": true,
+      "oops": false,
+      "locked_out": false,
+      "current_user": {"account_id": "123", "full_name": "Jane Doe"},
+      "last_checkin": 1720000000.0,
+      "last_update": 1720000000.0
+    }
+
+``status`` is a derived summary — one of ``locked_out``, ``oops``, ``in_use``,
+``idle``, or ``unknown`` (never checked in). ``current_user`` is ``null`` when
+no user is logged in. ``last_checkin`` and ``last_update`` are epoch seconds:
+``last_checkin`` is ``null`` until the machine's first check-in, and
+``last_update`` is ``null`` until its first *meaningful* state change. These are
+independent — a machine that has only sent idle heartbeats has a ``last_checkin``
+while ``last_update`` is still ``null``.
+
+.. _http-api.status-webhook:
+
+Status-Change Webhook
+---------------------
+
+When the ``STATUS_WEBHOOK_URL`` environment variable is set (see
+:ref:`configuration.env-vars`), the server POSTs a JSON webhook to that URL on
+every *meaningful* machine status change — never on ordinary MCU heartbeats.
+This lets an external consumer (such as the Equipment Status Board) maintain
+its own activity history and live status without polling.
+
+The webhook fires for these ``event`` values: ``login``, ``logout``,
+``unauthorized`` (known user lacking authorization), ``unknown_fob``,
+``override_login``, ``oops``, ``unoops``, ``lockout``, ``unlock``, and
+``reboot`` (MCU reboot detected).
+
+The request body is the same per-machine object as ``GET /api/machines`` (so
+``current_user`` means the same thing) plus three fields:
+
+* ``event`` — the status-change event name (see above).
+* ``timestamp`` — epoch seconds when the event fired.
+* ``user`` — the user *involved in this event* (the actor), as
+  ``{"account_id", "full_name"}`` or ``null``. This differs from
+  ``current_user`` for events like ``logout`` and ``unauthorized`` where a user
+  acted but is not (or is no longer) logged in.
+
+::
+
+    POST <STATUS_WEBHOOK_URL>
+    Content-Type: application/json
+
+    {
+      "name": "planer",
+      "display_name": "Planer",
+      "status": "idle",
+      "relay": false,
+      "oops": false,
+      "locked_out": false,
+      "current_user": null,
+      "last_checkin": 1720000000.0,
+      "last_update": 1720000000.5,
+      "event": "logout",
+      "timestamp": 1720000000.5,
+      "user": {"account_id": "123", "full_name": "Jane Doe"}
+    }
+
+Delivery is fire-and-forget so it never blocks the MCU response: each webhook
+is sent on a background task that retries with exponential backoff and a
+per-attempt timeout, giving up (and logging an error) after a few attempts. No
+authentication header is sent. Consumers should treat delivery as best-effort
+and reconcile via ``GET /api/machines`` when needed. See
+:py:mod:`dm_mac.webhook` for details.
+
 Prometheus Metrics
 ------------------
 
