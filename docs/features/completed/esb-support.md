@@ -1,6 +1,8 @@
-# Feature Template
+# ESB Support
 
-You must read, understand, and follow all instructions in `./README.md` when planning and implementing this feature.
+> Status: **completed**. This document is the original feature request plus the
+> implementation plan and per-milestone progress notes recorded as the work was
+> carried out.
 
 ## Overview
 

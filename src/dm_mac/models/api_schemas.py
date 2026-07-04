@@ -94,7 +94,9 @@ class MachineStatus(BaseModel):
     last_update: Optional[float] = Field(
         default=None,
         description="Epoch seconds of the machine's last meaningful state "
-        "change, or null if none.",
+        "change, or null until the first such change. Independent of "
+        "last_checkin: a machine that has only sent idle heartbeats has a "
+        "last_checkin but a null last_update.",
     )
 
 

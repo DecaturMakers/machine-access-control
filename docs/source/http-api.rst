@@ -110,8 +110,11 @@ entry has the shape:
 
 ``status`` is a derived summary — one of ``locked_out``, ``oops``, ``in_use``,
 ``idle``, or ``unknown`` (never checked in). ``current_user`` is ``null`` when
-no user is logged in. ``last_checkin`` / ``last_update`` are epoch seconds, or
-``null`` if the machine has never checked in.
+no user is logged in. ``last_checkin`` and ``last_update`` are epoch seconds:
+``last_checkin`` is ``null`` until the machine's first check-in, and
+``last_update`` is ``null`` until its first *meaningful* state change. These are
+independent — a machine that has only sent idle heartbeats has a ``last_checkin``
+while ``last_update`` is still ``null``.
 
 .. _http-api.status-webhook:
 
