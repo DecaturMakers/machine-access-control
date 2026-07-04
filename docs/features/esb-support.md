@@ -98,7 +98,22 @@ well-covered (no code change needed). All ``nox -s tests`` pass at 97% coverage.
 * **1.4** Unit tests for ``status``/``status_dict`` and the new endpoint
   (idle/in-use/oops/locked-out, with and without a current user).
 
-### Milestone 2 — Status-change webhook
+### Milestone 2 — Status-change webhook — ✅ COMPLETE
+
+Added ``src/dm_mac/webhook.py`` (``WebhookNotifier``: fire-and-forget delivery
+via ``aiohttp`` with bounded exponential-backoff retry, enabled by
+``STATUS_WEBHOOK_URL``), wired it into ``create_app`` as ``WEBHOOK_NOTIFIER``,
+and fired ``notify(...)`` from the meaningful status-change sites in
+``models/machine.py`` (login / logout / unauthorized / unknown_fob /
+override_login / oops / unoops / lockout / unlock / reboot), including the
+always-enabled RFID-tracking path. The notifier is resolved via
+``current_app`` in the request-context (MCU/API) paths and via the passed
+Slack handler's app (``slack.quart``) in the Slack-command path, which runs
+without a request context. Payloads reuse ``Machine.status_dict`` plus
+``event``, ``timestamp``, and a distinct ``user`` (event actor) field. Unit
+tests cover the notifier (payload/retry/backoff/disabled) and the wiring
+(each event fires; heartbeats do not; Slack path; disabled no-op). All
+``nox -s tests`` and ``nox -s mypy`` pass; ``webhook.py`` at 100% coverage.
 
 * **2.1** New module ``src/dm_mac/webhook.py`` with a ``WebhookNotifier`` class:
   * Constructed from ``STATUS_WEBHOOK_URL``.

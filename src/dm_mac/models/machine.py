@@ -31,6 +31,7 @@ from dm_mac.utils import load_json_config
 
 if TYPE_CHECKING:  # pragma: no cover
     from dm_mac.slack_handler import SlackHandler
+    from dm_mac.webhook import WebhookNotifier
 
 
 logger: Logger = getLogger(__name__)
@@ -274,6 +275,7 @@ class Machine:
         if not slack:
             slack = current_app.config.get("SLACK_HANDLER")
             source = "API"
+        self.state._notify_status_webhook("lockout", slack=slack)
         if not slack:
             # Slack integration is not enabled
             return
@@ -286,6 +288,7 @@ class Machine:
         if not slack:
             slack = current_app.config.get("SLACK_HANDLER")
             source = "API"
+        self.state._notify_status_webhook("unlock", slack=slack)
         if not slack:
             # Slack integration is not enabled
             return
@@ -298,6 +301,7 @@ class Machine:
         if not slack:
             slack = current_app.config.get("SLACK_HANDLER")
             source = "API"
+        self.state._notify_status_webhook("oops", slack=slack)
         if not slack:
             # Slack integration is not enabled
             return
@@ -310,6 +314,7 @@ class Machine:
         if not slack:
             slack = current_app.config.get("SLACK_HANDLER")
             source = "API"
+        self.state._notify_status_webhook("unoops", slack=slack)
         if not slack:
             # Slack integration is not enabled
             return
@@ -761,6 +766,39 @@ class MachineState:
                 "notification"
             )
 
+    def _notify_status_webhook(
+        self,
+        event: str,
+        user: Optional[User] = None,
+        slack: Optional["SlackHandler"] = None,
+    ) -> None:
+        """Fire a status-change webhook, if a notifier is configured.
+
+        No-op when ``WEBHOOK_NOTIFIER`` is unset (``STATUS_WEBHOOK_URL`` not
+        configured). Called only from meaningful status-change code paths so
+        the webhook never fires on ordinary MCU heartbeats. ``user`` is the
+        actor involved in the event (e.g. the user who just logged out), which
+        may differ from the machine's post-event ``current_user``.
+
+        The notifier lives in the Quart app config. MCU-update and API request
+        handlers run within a request context so it is reachable via
+        :data:`current_app`; the Slack command handlers do **not** run within a
+        request context, so when a :class:`SlackHandler` is passed we fall back
+        to its held app reference (``slack.quart``).
+        """
+        notifier: Optional["WebhookNotifier"] = None
+        try:
+            notifier = current_app.config.get("WEBHOOK_NOTIFIER")
+        except RuntimeError:
+            # No application context (Slack command path, or a unit test
+            # invoking a state method directly). Use the app held by the
+            # Slack handler if we have one; otherwise there is nothing to do.
+            if slack is not None:
+                notifier = slack.quart.config.get("WEBHOOK_NOTIFIER")
+        if notifier is None:
+            return
+        notifier.notify(self.machine, event, user=user)
+
     def _load_from_cache(self) -> None:
         """Load machine state cache from disk."""
         if not os.path.exists(self._state_path):
@@ -789,6 +827,7 @@ class MachineState:
             self.machine.display_name,
         )
         # locking handled in update()
+        prior_user: Optional[User] = self.current_user
         self.current_user = None
         self.is_override_login = False
         # Restore always-enabled state if applicable
@@ -803,6 +842,7 @@ class MachineState:
             self.status_led_rgb = (0.0, 0.0, 0.0)
             self.status_led_brightness = 0.0
         self._resolve_second_relay()
+        self._notify_status_webhook("reboot", user=prior_user)
         # log to Slack, if enabled
         slack: Optional["SlackHandler"] = current_app.config.get("SLACK_HANDLER")
         if not slack:
@@ -977,16 +1017,19 @@ class MachineState:
         """Handle oops button press."""
         ustr: str = ""
         uname: Optional[str] = None
+        oops_user: Optional[User] = None
         if self.rfid_value:
             ustr = " RFID card is present but unknown."
             if user := users.users_by_fob.get(self.rfid_value):
                 ustr = f" Current user is: {user.full_name}."
                 uname = user.full_name
+                oops_user = user
         logging.getLogger("OOPS").warning(
             "Machine %s was Oopsed.%s", self.machine.display_name, ustr
         )
         # locking handled in update()
         self.oops(do_locking=False)
+        self._notify_status_webhook("oops", user=oops_user)
         # log to Slack, if enabled
         slack: Optional["SlackHandler"] = current_app.config.get("SLACK_HANDLER")
         if not slack:
@@ -1002,6 +1045,7 @@ class MachineState:
     async def _handle_rfid_remove(self) -> None:
         """Handle RFID card removed."""
         was_override: bool = self.is_override_login
+        departed_user: Optional[User] = self.current_user
         logging.getLogger("AUTH").info(
             "RFID logout on %s by %s; session duration %d seconds%s",
             self.machine.display_name,
@@ -1044,6 +1088,7 @@ class MachineState:
             self.display_text = self.DEFAULT_DISPLAY_TEXT
             self.status_led_rgb = (0.0, 0.0, 0.0)
             self.status_led_brightness = 0.0
+        self._notify_status_webhook("logout", user=departed_user)
         # log to Slack, if enabled
         slack: Optional["SlackHandler"] = current_app.config.get("SLACK_HANDLER")
         if not slack:
@@ -1074,6 +1119,7 @@ class MachineState:
             self.display_text = "Unknown RFID"
             self.status_led_rgb = (1.0, 0.0, 0.0)
             self.status_led_brightness = self.STATUS_LED_BRIGHTNESS
+            self._notify_status_webhook("unknown_fob")
             if slack:
                 await slack.admin_log(
                     f"RFID login attempt on {self.machine.display_name} by unknown fob"
@@ -1094,6 +1140,7 @@ class MachineState:
             self.display_text = f"OVERRIDE BY\n{user.preferred_name}"
             self.status_led_rgb = (0.0, 1.0, 0.0)
             self.status_led_brightness = self.STATUS_LED_BRIGHTNESS
+            self._notify_status_webhook("override_login", user=user)
             if slack:
                 await slack.log_override_login(self.machine, user.full_name)
             return
@@ -1139,6 +1186,7 @@ class MachineState:
             # the Slack message with the accessory clause; update() will emit
             # the structured AUTH log later.
             self._resolve_second_relay(emit_log=False)
+            self._notify_status_webhook("login", user=user)
             if slack:
                 msg = (
                     f"RFID login on {self.machine.display_name} by authorized user "
@@ -1168,6 +1216,7 @@ class MachineState:
             self.display_text = "Unauthorized"
             self.status_led_rgb = (1.0, 0.5, 0.0)  # orange
             self.status_led_brightness = self.STATUS_LED_BRIGHTNESS
+            self._notify_status_webhook("unauthorized", user=user)
             if slack:
                 await slack.admin_log(
                     f"rejected RFID login on {self.machine.display_name} by "
@@ -1195,10 +1244,12 @@ class MachineState:
                     else 0
                 ),
             )
+            departed_user: Optional[User] = self.current_user
             self.rfid_value = None
             self.rfid_present_since = None
             self.current_user = None
             # State remains always-on (relay/display/LED not changed)
+            self._notify_status_webhook("logout", user=departed_user)
         else:
             # RFID inserted
             self.rfid_present_since = time()
@@ -1212,12 +1263,14 @@ class MachineState:
                     user.full_name,
                     rfid_value,
                 )
+                self._notify_status_webhook("login", user=user)
             else:
                 logging.getLogger("AUTH").warning(
                     "RFID inserted on always-enabled machine %s by unknown fob %s",
                     self.machine.display_name,
                     rfid_value,
                 )
+                self._notify_status_webhook("unknown_fob")
             # State remains always-on (relay/display/LED not changed)
 
     def _user_is_second_authorized(self, user: User) -> bool:
