@@ -156,9 +156,10 @@ unit-test coverage (`webhook.py` at 100%). All `nox` sessions pass: `tests`,
 
 Note: `nox -s safety` was failing on `main` due to a pre-existing transitive
 `msgpack==1.2.0` advisory (GHSA-6v7p-g79w-8964), unrelated to this feature. To
-satisfy the "all nox sessions passing" criterion, `msgpack ^1.2.1` was pinned
-in `pyproject.toml`'s existing "secure versions of transitive dependencies"
-block (same mechanism already used for urllib3/werkzeug/marshmallow).
+satisfy the "all nox sessions passing" criterion, `msgpack ^1.2.1` is pinned in
+`pyproject.toml`. Because `msgpack` is only pulled in via `cachecontrol` (a
+dev-group dependency) and is not used at runtime, the pin lives in
+`group.dev.dependencies` so it does not expand the production dependency set.
 
 * **3.1** Update documentation: ``README.md`` (env var + endpoints if listed),
   ``docs/source/configuration.rst`` (add ``STATUS_WEBHOOK_URL`` to the env-var
