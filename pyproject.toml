@@ -8,73 +8,73 @@ requires = [
 name = "machine_access_control"
 version = "0.15.0"
 description = "Decatur Makers Machine Access Control package"
-authors = [ "Jason Antman <jason@jasonantman.com>" ]
 license = "MIT"
+authors = [ "Jason Antman <jason@jasonantman.com>" ]
 readme = "README.rst"
 homepage = "https://github.com/Decaturmakers/machine-access-control"
 repository = "https://github.com/Decaturmakers/machine-access-control"
 documentation = "https://github.com/Decaturmakers/machine-access-control"
-packages = [
-  { include = "dm_mac", from = "src" },
-]
 classifiers = [
   "Development Status :: 3 - Alpha",
 ]
+packages = [
+  { include = "dm_mac", from = "src" },
+]
 dependencies.python = "^3.13"
-dependencies.jsonschema = "^4.23.0"
-dependencies.requests = "^2.32.4"
-dependencies.filelock = "^3.20.1"
-dependencies.prometheus-client = "^0.25.0"
-dependencies.quart = "^0.20.0"
+dependencies.aiohttp = "^3.14.5"
 dependencies.asyncio = "^4.0.0"
-dependencies.slack-bolt = "^1.21.3"
-dependencies.aiohttp = "^3.12.14"
-dependencies.slack-sdk = "^3.33.5"
+dependencies.filelock = "^4.2.12"
 dependencies.humanize = "^4.11.0"
-# Security: Explicitly require secure versions of transitive dependencies
-dependencies.urllib3 = "^2.6.0"
-dependencies.werkzeug = "^3.1.4"
+dependencies.jsonschema = "^4.23.0"
 dependencies.marshmallow = "^4.1.2"
-dependencies.quart-schema = "^0.23.0"
+dependencies.prometheus-client = "^0.26.0"
 dependencies.pydantic = "^2.12.5"
-# Security: msgpack is a dev-only transitive (via cachecontrol); pin the secure
-# floor in the dev group so it is not added to the production dependency set.
-group.dev.dependencies.msgpack = "^1.2.1"
-group.dev.dependencies.Pygments = ">=2.10.0"
+dependencies.quart = "^0.23.1"
+dependencies.quart-schema = "^0.25.0"
+dependencies.requests = "^2.32.4"
+dependencies.slack-bolt = "^1.21.3"
+dependencies.slack-sdk = "^3.33.5"
+# Security: Explicitly require secure versions of transitive dependencies
+dependencies.urllib3 = "^2.8.0"
+dependencies.werkzeug = "^3.1.9"
 group.dev.dependencies.black = ">=21.10b0"
 group.dev.dependencies.coverage = { extras = [ "toml" ], version = ">=6.2" }
 group.dev.dependencies.darglint = ">=1.8.1"
+group.dev.dependencies.faker = "^40.11.0"
 group.dev.dependencies.flake8 = ">=7.1.1"
 group.dev.dependencies.flake8-bandit = ">=2.1.2"
 group.dev.dependencies.flake8-bugbear = ">=21.9.2"
 group.dev.dependencies.flake8-docstrings = ">=1.6.0"
 group.dev.dependencies.flake8-rst-docstrings = ">=0.2.5"
+group.dev.dependencies.freezegun = "^1.5.1"
 group.dev.dependencies.furo = ">=2025.12.19"
 group.dev.dependencies.isort = ">=5.10.1"
+# Security: msgpack is a dev-only transitive (via cachecontrol); pin the secure
+# floor in the dev group so it is not added to the production dependency set.
+group.dev.dependencies.msgpack = "^1.2.4"
 group.dev.dependencies.mypy = ">=0.930"
 group.dev.dependencies.nox = ">=2024.4.15"
 group.dev.dependencies.nox-poetry = ">= 1.2.0"
+group.dev.dependencies.openpyxl = "^3.1.0"
+group.dev.dependencies.pandas = "^3.0.1"
 group.dev.dependencies.pep8-naming = ">=0.12.1"
+group.dev.dependencies.poetry-plugin-export = "^1.9.0"
 group.dev.dependencies.pre-commit = ">=2.16.0"
 group.dev.dependencies.pre-commit-hooks = ">=4.1.0"
+group.dev.dependencies.Pygments = ">=2.10.0"
 group.dev.dependencies.pytest = ">=6.2.5"
+group.dev.dependencies.pytest-blockage = "^0.2.4"
+group.dev.dependencies.pytest-html = "^4.1.1"
+group.dev.dependencies.python-dateutil = "^4.0.0"
 group.dev.dependencies.pyupgrade = ">=2.29.1"
+group.dev.dependencies.responses = "^0.26.0"
+group.dev.dependencies.sphinx = "<10.0"
 group.dev.dependencies.typeguard = ">=2.13.3"
 group.dev.dependencies.types-jsonschema = "^4.23.0.20240712"
-group.dev.dependencies.pytest-blockage = "^0.2.4"
-group.dev.dependencies.sphinx = "<10.0"
-group.dev.dependencies.responses = "^0.26.0"
 group.dev.dependencies.types-requests = "^2.32.0.20240712"
-group.dev.dependencies.faker = "^40.11.0"
-group.dev.dependencies.pytest-html = "^4.1.1"
-group.dev.dependencies.poetry-plugin-export = "^1.9.0"
-group.dev.dependencies.freezegun = "^1.5.1"
-group.dev.dependencies.pandas = "^3.0.1"
-group.dev.dependencies.python-dateutil = "^2.9.0"
-group.dev.dependencies.openpyxl = "^3.1.0"
-scripts.neongetter = "dm_mac.neongetter:main"
-scripts.neon-fob-adder = "dm_mac.neon_fob_adder:main"
 scripts.mac-server = "dm_mac:main"
+scripts.neon-fob-adder = "dm_mac.neon_fob_adder:main"
+scripts.neongetter = "dm_mac.neongetter:main"
 urls.Changelog = "https://github.com/Decaturmakers/machine-access-control/releases"
 
 [tool.isort]
@@ -82,16 +82,16 @@ profile = "black"
 force_single_line = true
 
 [tool.mypy]
-strict = true
 warn_unreachable = true
-pretty = true
-show_column_numbers = true
-show_error_codes = true
+strict = true
 show_error_context = true
+show_column_numbers = true
+pretty = true
+show_error_codes = true
 
 [tool.coverage]
-run.branch = true
 run.source = [ "dm_mac" ]
+run.branch = true
 paths.source = [ "src", "*/site-packages" ]
 paths.tests = [ "tests", "*/tests" ]
 report.fail_under = 5
