@@ -5,6 +5,7 @@ import os
 from base64 import b64encode
 from pathlib import Path
 from typing import Any
+from typing import Dict
 from typing import List
 from typing import Tuple
 from typing import cast
@@ -13,6 +14,7 @@ from unittest.mock import call
 from unittest.mock import patch
 
 import pytest
+import requests
 import responses
 from _pytest.capture import CaptureFixture
 from jsonschema.exceptions import ValidationError
@@ -543,3 +545,87 @@ class TestMain:
                 captured.out
                 == json.dumps({"my": "config"}, sort_keys=True, indent=4) + "\n"
             )
+
+
+SEARCH_URL: str = "https://api.neoncrm.com/v2/accounts/search"
+SEARCH_OK: Dict[str, Any] = {
+    "pagination": {"totalPages": 3},
+    "searchResults": [{"Account ID": "1"}],
+}
+
+
+class TestSearchRetry:
+    """Test retry behavior of the account search POST."""
+
+    @pytest.fixture
+    def nuu(self) -> NeonUserUpdater:
+        """Return an updater with config loading stubbed out."""
+        with patch(f"{pb}._load_and_validate_config", autospec=True):
+            with patch(f"{pbm}.env_var_or_die", return_value="x"):
+                return NeonUserUpdater()
+
+    @responses.activate(registry=OrderedRegistry)
+    def test_retry_then_succeed(
+        self, nuu: NeonUserUpdater, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A read timeout and an HTTP 500 are retried; then success."""
+        responses.add(
+            responses.POST, SEARCH_URL, body=requests.exceptions.ReadTimeout("slow")
+        )
+        responses.add(responses.POST, SEARCH_URL, status=500)
+        responses.add(responses.POST, SEARCH_URL, json=SEARCH_OK)
+        with patch(f"{pbm}.time.sleep") as m_sleep:
+            last, results = nuu._get_users_page(0, ["a"], "2026-01-01")
+        assert last == 2
+        assert results == [{"Account ID": "1"}]
+        assert len(responses.calls) == 3
+        assert m_sleep.mock_calls == [call(10), call(20)]
+        warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+        assert len(warnings) == 2
+        assert "attempt 1 of 3" in warnings[0].getMessage()
+        assert "ReadTimeout" in warnings[0].getMessage()
+        assert "HTTP 500" in warnings[1].getMessage()
+
+    @responses.activate(registry=OrderedRegistry)
+    def test_retry_429(self, nuu: NeonUserUpdater) -> None:
+        """HTTP 429 is retried."""
+        responses.add(responses.POST, SEARCH_URL, status=429)
+        responses.add(responses.POST, SEARCH_URL, json=SEARCH_OK)
+        with patch(f"{pbm}.time.sleep"):
+            nuu._get_users_page(0, ["a"], "2026-01-01")
+        assert len(responses.calls) == 2
+
+    @responses.activate(registry=OrderedRegistry)
+    def test_exhausted_timeout_raises(self, nuu: NeonUserUpdater) -> None:
+        """Persistent timeouts raise after all attempts."""
+        for _ in range(3):
+            responses.add(
+                responses.POST,
+                SEARCH_URL,
+                body=requests.exceptions.ReadTimeout("slow"),
+            )
+        with patch(f"{pbm}.time.sleep") as m_sleep:
+            with pytest.raises(requests.exceptions.ReadTimeout):
+                nuu._get_users_page(0, ["a"], "2026-01-01")
+        assert len(responses.calls) == 3
+        assert m_sleep.call_count == 2
+
+    @responses.activate(registry=OrderedRegistry)
+    def test_exhausted_500_raises(self, nuu: NeonUserUpdater) -> None:
+        """Persistent HTTP 500 raises HTTPError after all attempts."""
+        for _ in range(3):
+            responses.add(responses.POST, SEARCH_URL, status=500)
+        with patch(f"{pbm}.time.sleep"):
+            with pytest.raises(HTTPError):
+                nuu._get_users_page(0, ["a"], "2026-01-01")
+        assert len(responses.calls) == 3
+
+    @responses.activate(registry=OrderedRegistry)
+    def test_4xx_not_retried(self, nuu: NeonUserUpdater) -> None:
+        """A 403 is not retried."""
+        responses.add(responses.POST, SEARCH_URL, status=403)
+        with patch(f"{pbm}.time.sleep") as m_sleep:
+            with pytest.raises(HTTPError):
+                nuu._get_users_page(0, ["a"], "2026-01-01")
+        assert len(responses.calls) == 1
+        assert m_sleep.mock_calls == []

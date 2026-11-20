@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import sys
+import time
 from datetime import datetime
 from datetime import timedelta
 from typing import Any
@@ -173,6 +174,10 @@ class NeonUserUpdater:
     BASE_URL: str = "https://api.neoncrm.com/v2/"
 
     MAX_PAGE_SIZE: int = 200
+    #: Total attempts for the account search POST (transient failures only).
+    SEARCH_ATTEMPTS: int = 3
+    #: Seconds to sleep before retry N (1-based) is ``N * SEARCH_BACKOFF_SEC``.
+    SEARCH_BACKOFF_SEC: int = 10
 
     def __init__(self, dump_fields: bool = False):
         """Initialize NeonUserUpdater."""
@@ -310,6 +315,44 @@ class NeonUserUpdater:
         logger.info("Fields to get from Neon API: %s", field_names)
         return field_names
 
+    def _post_search(self, url: str, data: Dict[str, Any]) -> requests.Response:
+        """
+        POST the (read-only, so idempotent) account search, with retries.
+
+        Connection errors, timeouts and HTTP 429/5xx are retried, up to
+        ``SEARCH_ATTEMPTS`` total attempts with linear backoff. Other 4xx
+        responses are returned immediately. After the final attempt, the last
+        exception is raised, or the last response returned (so the caller's
+        ``raise_for_status()`` fails as it always has).
+        """
+        for attempt in range(1, self.SEARCH_ATTEMPTS + 1):
+            last: bool = attempt == self.SEARCH_ATTEMPTS
+            try:
+                r: requests.Response = self._sess.post(
+                    url, timeout=self._timeout, json=data
+                )
+            except (requests.ConnectionError, requests.Timeout) as ex:
+                if last:
+                    raise
+                reason: str = f"{type(ex).__name__}: {ex}"
+            else:
+                if r.status_code != 429 and r.status_code < 500:
+                    return r
+                if last:
+                    return r
+                reason = f"HTTP {r.status_code}"
+            delay: int = attempt * self.SEARCH_BACKOFF_SEC
+            logger.warning(
+                "Neon account search attempt %d of %d failed (%s); "
+                "retrying in %d seconds",
+                attempt,
+                self.SEARCH_ATTEMPTS,
+                reason,
+                delay,
+            )
+            time.sleep(delay)
+        raise AssertionError("unreachable")  # pragma: no cover
+
     def _get_users_page(
         self, page: int, fields: List[Union[str, int, List[str]]], cutoff: str
     ) -> Tuple[int, List[Dict[str, Any]]]:
@@ -337,7 +380,7 @@ class NeonUserUpdater:
         logger.debug(
             "POST %s with data: %s", url, json.dumps(data, sort_keys=True, indent=4)
         )
-        r: requests.Response = self._sess.post(url, timeout=self._timeout, json=data)
+        r: requests.Response = self._post_search(url, data)
         try:
             r.raise_for_status()
         except Exception:
