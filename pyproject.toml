@@ -6,7 +6,7 @@ requires = [
 
 [tool.poetry]
 name = "machine_access_control"
-version = "0.15.0"
+version = "0.15.1"
 description = "Decatur Makers Machine Access Control package"
 license = "MIT"
 authors = [ "Jason Antman <jason@jasonantman.com>" ]
