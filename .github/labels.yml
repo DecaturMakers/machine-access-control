@@ -19,6 +19,10 @@
 - name: dependencies
   description: Pull requests that update a dependency file
   color: 0366d6
+- name: discussion
+  color: c7def8
+- name: Docs
+  color: fbca04
 - name: documentation
   description: Improvements or additions to documentation
   color: 0075ca
@@ -40,6 +44,8 @@
 - name: invalid
   description: This doesn't seem right
   color: e4e669
+- name: needs decision
+  color: fad8c7
 - name: performance
   description: Performance
   color: "016175"
@@ -55,12 +61,23 @@
 - name: removal
   description: Removals and Deprecations
   color: 9ae7ea
+- name: robot-army
+  description: Dispatch this issue to robot-army
+  color: 517a45
+- name: stale
+  color: f9d0c4
 - name: style
   description: Style
   color: c120e5
 - name: testing
   description: Testing
   color: b1fc6f
+- name: unreleased fix
+  color: 0052cc
+- name: unsupported-repo
+  color: b60205
+- name: Waiting For Response
+  color: fef2c0
 - name: wontfix
   description: This will not be worked on
   color: ffffff
