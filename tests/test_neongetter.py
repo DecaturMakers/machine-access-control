@@ -98,7 +98,7 @@ class TestDumpFields:
             os.path.join(fixtures_path, "test_neongetter", "dump_fields.yaml")
         )
         # store the responses; they're removed from the registry as called
-        resp: List[responses.BaseResponse] = [x for x in responses.registered()]
+        resp: List[responses.BaseResponse] = [*responses.registered()]
         NeonUserUpdater(dump_fields=True)
         captured = capsys.readouterr()
         assert resp[0].call_count == 1
@@ -128,7 +128,7 @@ class TestDumpFields:
             os.path.join(fixtures_path, "test_neongetter", "dump_fields.yaml")
         )
         # exfiltrate the registered responses
-        resp: List[responses.BaseResponse] = [x for x in responses.registered()]
+        resp: List[responses.BaseResponse] = [*responses.registered()]
         # clear all registered responses
         responses.reset()
         # add back a response so the first request fails
@@ -154,7 +154,7 @@ class TestDumpFields:
             os.path.join(fixtures_path, "test_neongetter", "dump_fields.yaml")
         )
         # exfiltrate the registered responses
-        resp: List[responses.BaseResponse] = [x for x in responses.registered()]
+        resp: List[responses.BaseResponse] = [*responses.registered()]
         # clear all registered responses
         responses.reset()
         # add back the first response

@@ -1444,7 +1444,7 @@ class MachineState:
             "relay": self.relay_desired_state,
             "display": self.display_text,
             "oops_led": self.is_oopsed,
-            "status_led_rgb": [x for x in self.status_led_rgb],
+            "status_led_rgb": [*self.status_led_rgb],
             "status_led_brightness": self.status_led_brightness,
             "second_relay": self.second_relay_desired_state,
         }

@@ -86,7 +86,7 @@ class TestGetCustomFieldsRaw:
             cls = NeonFobUpdater()
 
         # Get registered responses before making calls
-        resp: List[responses.BaseResponse] = [x for x in responses.registered()]
+        resp: List[responses.BaseResponse] = [*responses.registered()]
 
         result = cls._get_custom_fields_raw()
 
@@ -123,7 +123,7 @@ class TestGetFobcsvFieldId:
             cls = NeonFobUpdater()
 
         # Get registered responses before making calls
-        resp: List[responses.BaseResponse] = [x for x in responses.registered()]
+        resp: List[responses.BaseResponse] = [*responses.registered()]
 
         result = cls._get_fobcsv_field_id()
 
