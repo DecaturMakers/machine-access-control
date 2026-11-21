@@ -823,7 +823,9 @@ class MachineState:
         """Handle when the ESP32 (MCU) has rebooted since last checkin.
 
         This logs out the current user if logged in and resets the machine state.
-        For always-enabled machines, restores the always-on state.
+        An Oopsed or locked-out machine keeps its relay off and its Oops /
+        lock-out display; otherwise, always-enabled machines restore the
+        always-on state.
         """
         logging.getLogger("AUTH").warning(
             "Machine %s rebooted; resetting relay and RFID state",
@@ -837,8 +839,21 @@ class MachineState:
         prior_user: Optional[User] = self.current_user
         self.current_user = None
         self.is_override_login = False
-        # Restore always-enabled state if applicable
-        if self.machine.always_enabled:
+        # An Oops or lock-out survives a reboot: keep the relay off and keep
+        # showing the Oops / lock-out display. Only a machine that is neither
+        # Oopsed nor locked out may restore its always-enabled state; doing
+        # so while Oopsed or locked out would energize the relay.
+        if self.is_oopsed:
+            self.relay_desired_state = False
+            self.display_text = self.OOPS_DISPLAY_TEXT
+            self.status_led_rgb = (1.0, 0.0, 0.0)
+            self.status_led_brightness = self.STATUS_LED_BRIGHTNESS
+        elif self.is_locked_out:
+            self.relay_desired_state = False
+            self.display_text = self.LOCKOUT_DISPLAY_TEXT
+            self.status_led_rgb = (1.0, 0.5, 0.0)
+            self.status_led_brightness = self.STATUS_LED_BRIGHTNESS
+        elif self.machine.always_enabled:
             self.relay_desired_state = True
             self.display_text = self.ALWAYS_ON_DISPLAY_TEXT
             self.status_led_rgb = (0.0, 1.0, 0.0)
