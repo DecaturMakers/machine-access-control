@@ -1,12 +1,16 @@
 """Decatur Makers Machine Access Control."""
 
 import argparse
+import json
 import logging
 import os
 import sys
 from asyncio import AbstractEventLoop
 from asyncio import get_event_loop
+from datetime import datetime
 from time import time
+from typing import Any
+from typing import Dict
 
 from quart import Quart
 from quart import has_request_context
@@ -49,6 +53,53 @@ class RequestFormatter(logging.Formatter):
         return super().format(record)
 
 
+#: Attribute names present on every LogRecord (plus those set by
+#: ``Formatter.format()``); anything else on a record came from ``extra=``.
+_STANDARD_RECORD_ATTRS = frozenset(
+    logging.LogRecord("", 0, "", 0, "", None, None).__dict__.keys()
+) | {"message", "asctime", "taskName", "url", "remote_addr"}
+
+
+class JsonFormatter(logging.Formatter):
+    """Format each log record as a single-line JSON object.
+
+    See ``docs/source/configuration.rst`` (JSON Logging) for the field list.
+    """
+
+    def __init__(self, include_location: bool = False) -> None:
+        """Optionally include source file, line, and function fields."""
+        super().__init__()
+        self.include_location: bool = include_location
+
+    def format(self, record: logging.LogRecord) -> str:
+        """Render ``record`` as one line of JSON."""
+        data: Dict[str, Any] = {
+            "timestamp": datetime.fromtimestamp(record.created)
+            .astimezone()
+            .isoformat(timespec="milliseconds"),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+            "remote_addr": None,
+            "url": None,
+        }
+        if has_request_context():
+            data["remote_addr"] = request.remote_addr
+            data["url"] = request.url
+        if self.include_location:
+            data["filename"] = record.filename
+            data["lineno"] = record.lineno
+            data["funcName"] = record.funcName
+        if record.exc_info:
+            data["exc_info"] = self.formatException(record.exc_info)
+        if record.stack_info:
+            data["stack_info"] = self.formatStack(record.stack_info)
+        for key, value in record.__dict__.items():
+            if key not in _STANDARD_RECORD_ATTRS and key not in data:
+                data[key] = value
+        return json.dumps(data, default=str, ensure_ascii=False)
+
+
 formatter = RequestFormatter(
     "%(asctime)s %(levelname)s:[%(remote_addr)s]:%(name)s:%(message)s"
 )
@@ -66,6 +117,30 @@ logging.getLogger().setLevel(logging.INFO)
 api.register_blueprint(machineapi)
 
 app: Quart
+
+
+def configure_log_format(lgr: logging.Logger, verbose: bool) -> None:
+    """Switch ``lgr`` to JSON output if the ``LOG_FORMAT`` env var says so.
+
+    ``LOG_FORMAT`` is ``text`` (default) or ``json``, case-insensitive. Text
+    mode leaves logging exactly as it is. JSON mode leaves Quart's
+    ``default_handler`` as the only handler on ``lgr`` (so each record is
+    written once) and gives it a :py:class:`JsonFormatter`. Any other value
+    keeps text output and logs a warning.
+    """
+    raw: str = os.environ.get("LOG_FORMAT", "")
+    value: str = raw.strip().lower()
+    if value in ("", "text"):
+        return
+    if value != "json":
+        lgr.warning("Unknown LOG_FORMAT %r; using text", raw)
+        return
+    for handler in list(lgr.handlers):
+        if handler is not default_handler:
+            lgr.removeHandler(handler)
+    if default_handler not in lgr.handlers:
+        lgr.addHandler(default_handler)
+    default_handler.setFormatter(JsonFormatter(include_location=verbose))
 
 
 def asyncio_exception_handler(_, context):
@@ -140,6 +215,7 @@ def main() -> None:
         set_log_debug(logger)
     else:
         set_log_info(logger)
+    configure_log_format(logger, args.verbose)
     loop: AbstractEventLoop = get_event_loop()
     loop.set_exception_handler(asyncio_exception_handler)
     app = create_app()

@@ -102,6 +102,46 @@ Environment Variables
    * - ``STATUS_WEBHOOK_URL``
      - no
      - If set, the URL to POST a JSON status-change webhook to on every meaningful machine event (login, logout, unauthorized or unknown fob, override login, oops, un-oops, lockout, unlock, reboot). Disabled when unset. See :ref:`http-api.status-webhook`.
+   * - ``LOG_FORMAT``
+     - no
+     - Log output format: ``text`` (default) or ``json`` (case-insensitive). Any other value keeps text output and logs a warning. See :ref:`configuration.json-logging`.
+
+.. _configuration.json-logging:
+
+JSON Logging
+------------
+
+Setting ``LOG_FORMAT=json`` makes the server write every log line (application, ``AUTH``, library and HTTP access logs) to standard error as a single JSON object, for ingestion by a log aggregator. The default text format is unchanged when ``LOG_FORMAT`` is unset.
+
+.. list-table:: JSON log fields
+   :header-rows: 1
+
+   * - Field
+     - Description
+   * - ``timestamp``
+     - ISO 8601 time with millisecond precision and UTC offset, e.g. ``2026-11-21T08:37:21.462-05:00``
+   * - ``level``
+     - ``DEBUG``, ``INFO``, ``WARNING``, ``ERROR`` or ``CRITICAL``
+   * - ``logger``
+     - Logger name; authentication and authorization decisions use ``AUTH``
+   * - ``message``
+     - The formatted log message
+   * - ``remote_addr``, ``url``
+     - Client address and request URL when logged while handling an HTTP request, otherwise ``null``
+   * - ``exc_info``, ``stack_info``
+     - Formatted traceback / stack, only when present
+   * - ``filename``, ``lineno``, ``funcName``
+     - Source location, only in verbose (``-v``) mode
+   * - *other keys*
+     - Any fields passed via the logging ``extra`` argument; values that are not JSON-serializable are rendered as strings
+
+Example:
+
+.. code-block:: json
+
+   {"timestamp": "2026-11-21T08:37:21.462-05:00", "level": "INFO", "logger": "AUTH", "message": "...", "remote_addr": "10.0.0.5", "url": "http://mac/api/machine/update"}
+
+For example, ``jq 'select(.logger == "AUTH")'`` selects all authorization decisions.
 
 .. _configuration.machine-state-dir:
 
