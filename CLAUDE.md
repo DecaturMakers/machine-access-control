@@ -225,6 +225,8 @@ request context.
 
 Custom `RequestFormatter` adds request context (`remote_addr`, `url`) to all logs when available. The `AUTH` logger is used specifically for authentication/authorization decisions.
 
+With `LOG_FORMAT=json`, `configure_log_format()` (called from `main()`) leaves Quart's `default_handler` as the only root handler and gives it `JsonFormatter` (`src/dm_mac/__init__.py`): one JSON object per line with `timestamp`, `level`, `logger`, `message`, `remote_addr`, `url`, optional `exc_info`/`stack_info`, `filename`/`lineno`/`funcName` in verbose mode, and any `extra=` fields. Text mode is untouched (note it currently emits each record twice, via the `basicConfig` handler and `default_handler`).
+
 ## Environment Variables
 
 Required for NeonGetter:
@@ -242,6 +244,7 @@ Optional for MAC server:
 - `SLACK_CONTROL_CHANNEL_ID`: Private admin channel ID
 - `SLACK_OOPS_CHANNEL_ID`: Public channel for oops/maintenance notices
 - `STATUS_WEBHOOK_URL`: If set, URL to POST status-change webhooks to (see Status-Change Webhook above); disabled when unset
+- `LOG_FORMAT`: `text` (default) or `json`; see Logging above. Unknown values keep text and log a warning
 
 ## Testing Notes
 
@@ -276,4 +279,5 @@ We have a special process for developing features. When asked to begin work on a
 <!-- SPECKIT START -->
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
+at specs/20261121-083531-json-logging/plan.md
 <!-- SPECKIT END -->
